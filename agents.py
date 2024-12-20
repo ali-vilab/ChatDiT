@@ -344,11 +344,12 @@ class ReferencingAgent(Agent):
         assert all(set(u['input_image_ids']) & set(u['output_image_ids']) == set() for u in groups)
         assert [t for u in groups for t in u['output_image_ids']] == output_ids
         merged_ids = input_ids + output_ids
-        assert all(
-            max(merged_ids.index(t) for t in u['input_image_ids']) <
-            min(merged_ids.index(t) for t in u['output_image_ids'])
-            for u in groups
-        )
+        if input_ids:
+            assert all(
+                max(merged_ids.index(t) for t in u['input_image_ids']) <
+                min(merged_ids.index(t) for t in u['output_image_ids'])
+                for u in groups
+            )
         return groups
 
 
@@ -515,7 +516,7 @@ class ExecutionAgent:
                 height=height,
                 width=width,
                 generator=torch.Generator(device=self.pipe.device).manual_seed(seed),
-                image_preprocess_type='resize_and_crop',
+                preprocess_type='resize_and_crop',
                 reformat_prompt=True,
                 **kwargs
             )
@@ -523,6 +524,31 @@ class ExecutionAgent:
 
 
 #---------------------- MarkdownAgent ----------------------#
+
+class IllustratedArticle:
+    
+    def __init__(self, markdown, image_dict):
+        # check inputs
+        pattern = r"\(input_[\w]+\.jpg\)|\(output_[\w]+\.jpg\)"
+        image_keys = set(u[1:-5] for u in re.findall(pattern, markdown))
+        assert image_keys.issubset(image_dict.keys())
+
+        # assign variables
+        self.markdown = markdown
+        self.image_dict = image_dict
+        self.image_keys = image_keys
+    
+    def save(self, folder_path, name='illustrated_article'):
+        os.makedirs(folder_path, exist_ok=True)
+
+        # save markdown file
+        with open(os.path.join(folder_path, name + '.md'), 'w') as f:
+            f.write(self.markdown)
+        
+        # save images
+        for k in self.image_keys:
+            self.image_dict[k].save(os.path.join(folder_path, k + '.jpg'))
+
 
 class MarkdownAgent(Agent):
     """
@@ -536,6 +562,7 @@ class MarkdownAgent(Agent):
     def action(
         self,
         instruction_parsing_output_json,
+        execution_output_images,
         instruction,
         images=[]
     ):
@@ -548,19 +575,20 @@ class MarkdownAgent(Agent):
         }
 
         # send request
-        markdown = self.client(
+        markdown = self.send_request(
+            client=self.client,
             message=json.dumps(input_json, indent=4, ensure_ascii=False),
             images=[],
             history=[{'role': 'system', 'content': self.system}],
             response_format={'type': 'text'}
         )
-        
-        # check outputs
+
+        # create illustrated article
         image_ids = set(
             [u['image_id'] for u in instruction_parsing_output_json['descriptions']['input_images']] +
             [u['image_id'] for u in instruction_parsing_output_json['descriptions']['output_images']]
         )
-        pattern = r"\(input_[\w]+\.jpg\)|\(output_[\w]+\.jpg\)"
-        names = set(u[1:-5] for u in re.findall(pattern, markdown))
-        assert names.issubset(image_ids)
-        return markdown
+        images = images + execution_output_images
+        image_dict = {u: v for u, v in zip(image_ids, images)}
+        article = IllustratedArticle(markdown, image_dict)
+        return article

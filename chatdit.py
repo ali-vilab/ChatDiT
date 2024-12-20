@@ -20,26 +20,25 @@ class ChatDiT:
         self.markdown_agent = MarkdownAgent(client=client)
     
     def chat(self, message, images=[], return_markdown=False):
-        instruction_parsing_output = self.instruction_parsing_agent(
-            message=message,
+        instruction_parsing_output_json = self.instruction_parsing_agent(
+            instruction=message,
             images=images
         )
-        strategy_planning_output = self.strategy_planning_agent(
-            instruction_parsing_output=instruction_parsing_output,
-            message=message,
+        strategy_planning_output_json = self.strategy_planning_agent(
+            instruction_parsing_output_json=instruction_parsing_output_json,
+            instruction=message,
             images=images
         )
         output_images = self.execution_agent(
-            strategy_planning_output=strategy_planning_output,
-            message=message,
+            strategy_planning_output_json=strategy_planning_output_json,
+            instruction=message,
             images=images
         )
         if return_markdown:
             illustrated_article = self.markdown_agent(
-                instruction_parsing_output=instruction_parsing_output,
-                strategy_planning_output=strategy_planning_output,
-                execution_output=output_images,
-                message=message,
+                instruction_parsing_output_json=instruction_parsing_output_json,
+                execution_output_images=output_images,
+                instruction=message,
                 images=images
             )
             return illustrated_article
